@@ -1,3 +1,16 @@
+<div align="center">
+
+# 确认论 · 核心公式
+
+## 操作 + 确认 = 完成  
+## 操作 − 确认 = 未完成
+
+---
+
+## Operation + Confirmation = Done  
+## Operation − Confirmation = Unfinished
+
+</div>
 # Meaning Limits Society
 
 本仓库试图回答一个问题：
