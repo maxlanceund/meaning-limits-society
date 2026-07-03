@@ -1,6 +1,6 @@
 <div align="center">
 
-# 确认论 · 核心公式
+# 确认论 Confirmation Theory · 核心公式 Core Formula
 
 ## 操作 + 确认 = 完成  
 ## 操作 − 确认 = 未完成
@@ -11,6 +11,7 @@
 ## Operation − Confirmation = Unfinished
 
 </div>
+
 # Meaning Limits Society
 
 本仓库试图回答一个问题：
