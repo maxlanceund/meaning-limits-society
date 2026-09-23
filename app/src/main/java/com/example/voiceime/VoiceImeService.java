@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat;
 import com.k2fsa.sherpa.onnx.OfflineRecognizer;
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
 import com.k2fsa.sherpa.onnx.OfflineStream;
+import com.k2fsa.sherpa.onnx.OfflineModelConfig;
+import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -76,13 +78,21 @@ public class VoiceImeService extends InputMethodService {
                     }
                 }
 
-                OfflineRecognizerConfig config = new OfflineRecognizerConfig();
-                config.modelConfig = new OfflineRecognizerConfig.OfflineModelConfig();
-                config.modelConfig.senseVoice = new OfflineRecognizerConfig.OfflineModelConfig.SenseVoiceModelConfig();
-                config.modelConfig.senseVoice.model = new File(modelDir, "model.int8.onnx").getAbsolutePath();
-                config.modelConfig.senseVoice.tokens = new File(modelDir, "tokens.txt").getAbsolutePath();
-                config.modelConfig.numThreads = 2;
-                config.featConfig.sampleRate = 16000;
+                OfflineSenseVoiceModelConfig senseVoiceConfig = OfflineSenseVoiceModelConfig.builder()
+                        .setModel(new File(modelDir, "model.int8.onnx").getAbsolutePath())
+                        .build();
+
+                OfflineModelConfig modelConfig = OfflineModelConfig.builder()
+                        .setSenseVoice(senseVoiceConfig)
+                        .setTokens(new File(modelDir, "tokens.txt").getAbsolutePath())
+                        .setNumThreads(2)
+                        .setDebug(true)
+                        .build();
+
+                OfflineRecognizerConfig config = OfflineRecognizerConfig.builder()
+                        .setOfflineModelConfig(modelConfig)
+                        .setDecodingMethod("greedy_search")
+                        .build();
 
                 recognizer = new OfflineRecognizer(config);
                 isModelLoading = false;
@@ -127,18 +137,60 @@ public class VoiceImeService extends InputMethodService {
         btn.setEnabled(false);
 
         workerThread = new Thread(() -> {
+            android.media.AudioRecord audioRecord = null;
             try {
+                int sampleRate = 16000;
+                int bufferSize = android.media.AudioRecord.getMinBufferSize(
+                        sampleRate,
+                        android.media.AudioFormat.CHANNEL_IN_MONO,
+                        android.media.AudioFormat.ENCODING_PCM_16BIT);
+                if (bufferSize == android.media.AudioRecord.ERROR
+                        || bufferSize == android.media.AudioRecord.ERROR_BAD_VALUE) {
+                    bufferSize = sampleRate * 2;
+                }
+
+                audioRecord = new android.media.AudioRecord(
+                        android.media.MediaRecorder.AudioSource.MIC,
+                        sampleRate,
+                        android.media.AudioFormat.CHANNEL_IN_MONO,
+                        android.media.AudioFormat.ENCODING_PCM_16BIT,
+                        bufferSize);
+                audioRecord.startRecording();
+
                 OfflineStream stream = recognizer.createStream();
-                // 这里需要接入录音逻辑，实时读取PCM数据并送入 stream.acceptWaveform()
-                // 识别结束后调用 recognizer.decode(stream) 获取结果
-                // 由于代码篇幅限制，此处为示意，具体录音和识别逻辑需要完整实现
-                String result = "识别结果占位"; 
-                if (getCurrentInputConnection() != null && !result.isEmpty()) {
+                short[] buffer = new short[bufferSize / 2];
+                long startTime = System.currentTimeMillis();
+
+                while (!Thread.currentThread().isInterrupted()
+                        && System.currentTimeMillis() - startTime < 8000) {
+                    int read = audioRecord.read(buffer, 0, buffer.length);
+                    if (read > 0) {
+                        float[] samples = new float[read];
+                        for (int i = 0; i < read; i++) {
+                            samples[i] = buffer[i] / 32768.0f;
+                        }
+                        stream.acceptWaveform(samples, sampleRate);
+                    }
+                }
+
+                recognizer.decode(stream);
+                String result = recognizer.getResult(stream);
+                stream.release();
+
+                if (result != null && !result.isEmpty() && getCurrentInputConnection() != null) {
                     getCurrentInputConnection().commitText(result, 1);
                 }
             } catch (Exception e) {
-                // 错误处理
+                final String msg = e.getMessage();
+                if (btn != null) {
+                    btn.post(() -> Toast.makeText(VoiceImeService.this,
+                            "识别失败: " + msg, Toast.LENGTH_LONG).show());
+                }
             } finally {
+                if (audioRecord != null) {
+                    try { audioRecord.stop(); } catch (Exception ignored) {}
+                    audioRecord.release();
+                }
                 if (btn != null) {
                     btn.post(() -> {
                         btn.setText("点我开始说话");
